@@ -67,6 +67,7 @@ endif()
 option(LLAMA_ACCELERATE             "llama: enable Accelerate framework"                    ON)
 option(LLAMA_OPENBLAS               "llama: use OpenBLAS"                                   OFF)
 option(LLAMA_CUBLAS                 "llama: use cuBLAS"                                     OFF)
+option(LLAMA_ROCBLAS                "llama: use rocBLAS"                                    ON)
 
 option(LLAMA_BUILD_TESTS            "llama: build tests"    ${LLAMA_STANDALONE})
 option(LLAMA_BUILD_EXAMPLES         "llama: build examples" ${LLAMA_STANDALONE})
@@ -165,6 +166,47 @@ if (LLAMA_CUBLAS)
 
     else()
         message(WARNING "cuBLAS not found")
+    endif()
+endif()
+
+macro(find_package_and_print_version PACKAGE_NAME)
+    find_package("${PACKAGE_NAME}" ${ARGN})
+    message("${PACKAGE_NAME} VERSION: ${${PACKAGE_NAME}_VERSION}")
+endmacro()
+
+if (LLAMA_ROCBLAS)
+
+    cmake_minimum_required(VERSION 3.17)
+
+    if(true)
+        message(STATUS "AMD HIP found")
+
+        set(hip_library_name amdhip64)
+        message("HIP library name: ${hip_library_name}")
+
+        set(GGML_ROCM_SOURCES ggml-rocm.cpp ggml-rocm.h)
+        set(ROCM_PATH /opt/rocm)
+        set(ROCM_INCLUDE_DIRS ${ROCM_PATH}/include)
+        set(HIP_PATH ${ROCM_PATH}/hip)
+        set(HCC_PATH ${ROCM_PATH}/hcc)
+        set(HIPCC_PATH ${ROCM_PATH}/hip/bin/hipcc)
+
+        set(CMAKE_MODULE_PATH ${HIP_PATH}/cmake ${CMAKE_MODULE_PATH})
+
+        set(CMAKE_HCC_FLAGS_DEBUG ${CMAKE_CXX_FLAGS_DEBUG})
+        set(CMAKE_HCC_FLAGS_RELEASE ${CMAKE_CXX_FLAGS_RELEASE})
+
+        find_package(hip REQUIRED)
+        find_package(rocblas REQUIRED)
+        find_package(rocfft REQUIRED)
+        find_package(AMDDeviceLibs REQUIRED CONFIG)
+
+        set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} hip::host hip::device roc::rocblas roc::rocfft)
+        set(CMAKE_CXX_COMPILER=${ROCM_PATH}/llvm/bin/clang++)
+        set(CMAKE_C_COMPILER=${ROCM_PATH}/llvm/bin/clang)
+
+    else()
+        message(WARNING "rocBLAS not found")
     endif()
 endif()
 
@@ -307,7 +349,8 @@ endif()
 add_library(ggml OBJECT
             ggml.c
             ggml.h
-            ${GGML_CUDA_SOURCES})
+            ${GGML_CUDA_SOURCES}
+            ${GGML_ROCM_SOURCES})
 
 target_include_directories(ggml PUBLIC .)
 target_compile_features(ggml PUBLIC c_std_11) # don't bump
