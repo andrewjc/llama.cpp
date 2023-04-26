@@ -169,11 +169,6 @@ if (LLAMA_CUBLAS)
     endif()
 endif()
 
-macro(find_package_and_print_version PACKAGE_NAME)
-    find_package("${PACKAGE_NAME}" ${ARGN})
-    message("${PACKAGE_NAME} VERSION: ${${PACKAGE_NAME}_VERSION}")
-endmacro()
-
 if (LLAMA_ROCBLAS)
 
     cmake_minimum_required(VERSION 3.17)
@@ -197,13 +192,18 @@ if (LLAMA_ROCBLAS)
         set(CMAKE_HCC_FLAGS_RELEASE ${CMAKE_CXX_FLAGS_RELEASE})
 
         find_package(hip REQUIRED)
-        find_package(rocblas REQUIRED)
-        find_package(rocfft REQUIRED)
+        find_package(hipblas REQUIRED)
+        find_package(hipfft REQUIRED)
         find_package(AMDDeviceLibs REQUIRED CONFIG)
 
-        set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} hip::host hip::device roc::rocblas roc::rocfft)
-        set(CMAKE_CXX_COMPILER=${ROCM_PATH}/llvm/bin/clang++)
-        set(CMAKE_C_COMPILER=${ROCM_PATH}/llvm/bin/clang)
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+        set(CMAKE_CXX_EXTENSIONS OFF)
+
+        set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} hip::host hip::device roc::hipblas hip::hipfft)
+        set(CMAKE_CXX_COMPILER ${ROCM_PATH}/llvm/bin/clang++)
+        set(CMAKE_C_COMPILER ${ROCM_PATH}/llvm/bin/clang)
+        add_compile_definitions(GGML_USE_ROCMBLAS)
 
     else()
         message(WARNING "rocBLAS not found")

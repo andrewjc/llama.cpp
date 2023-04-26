@@ -1,4 +1,5 @@
 #include <hipblas.h>
+#include <rocblas.h>
 #include <hip/hip_runtime.h>
 
 #ifdef  __cplusplus

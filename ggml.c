@@ -149,6 +149,8 @@ inline static void* ggml_aligned_malloc(size_t size) {
 #include <cblas.h>
 #elif defined(GGML_USE_CUBLAS)
 #include "ggml-cuda.h"
+#elif defined(GGML_USE_ROCMBLAS)
+#include "ggml-rocm.h"
 #endif
 
 #undef MIN
@@ -3840,6 +3842,11 @@ struct ggml_context * ggml_init(struct ggml_init_params params) {
         // initialize cuBLAS
         #if defined(GGML_USE_CUBLAS)
         ggml_init_cublas();
+        #endif
+
+        // initialize rocmBLAS
+        #if defined(GGML_USE_ROCMBLAS)
+        ggml_init_hipblas();
         #endif
 
         is_first_call = false;
@@ -7703,6 +7710,18 @@ static void ggml_compute_forward_mul_mat_f32(
         float *d_D = ggml_cuda_pool_malloc(sizeof(float) * d_ne, &d_size);
 #endif
 
+#if defined(GGML_USE_ROCMBLAS)
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+        const int x_ne = ne01 * ne10;
+        const int y_ne = ne11 * ne10;
+        const int d_ne = ne11 * ne01;
+        size_t x_size, y_size, d_size;
+        float *d_X = ggml_rocm_pool_malloc(sizeof(float) * x_ne, &x_size);
+        float *d_Y = ggml_rocm_pool_malloc(sizeof(float) * x_ne, &x_size);
+        float *d_D = ggml_rocm_pool_malloc(sizeof(float) * x_ne, &x_size);
+#endif
+
         for (int64_t i03 = 0; i03 < ne03; i03++) {
             for (int64_t i02 = 0; i02 < ne02; i02++) {
                 const float * x = (float *) ((char *) src0->data + i02*nb02 + i03*nb03);
@@ -7740,6 +7759,13 @@ static void ggml_compute_forward_mul_mat_f32(
         ggml_cuda_pool_free(d_X, x_size);
         ggml_cuda_pool_free(d_Y, y_size);
         ggml_cuda_pool_free(d_D, d_size);
+#endif
+#if defined(GGML_USE_ROCMBLAS)
+        ROCM_CHECK(hipStreamSynchronize(g_hipStream));
+        ggml_hip_pool_free(d_X, x_size);
+        ggml_hip_pool_free(d_X, x_size);
+        ggml_hip_pool_free(d_X, x_size);
+
 #endif
         //printf("CBLAS F32 = %f ms, %d x %d x %d x %d\n", (ggml_perf_time_us() - t0)/1000.0, ne0, ne1, ne2, ne3);
 
@@ -8121,7 +8147,7 @@ static void ggml_compute_forward_mul_mat_q_f32(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
-#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_ROCM_BLAS)
     if (ggml_compute_forward_mul_mat_use_blas(src0, src1, dst)) {
         if (params->ith != 0) {
             return;
@@ -12493,7 +12519,7 @@ int ggml_cpu_has_wasm_simd(void) {
 }
 
 int ggml_cpu_has_blas(void) {
-#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
+#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_ROCMBLAS)
     return 1;
 #else
     return 0;
@@ -12502,6 +12528,14 @@ int ggml_cpu_has_blas(void) {
 
 int ggml_cpu_has_cublas(void) {
 #if defined(GGML_USE_CUBLAS)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int ggml_cpu_has_rocmblas(void) {
+#if defined(GGML_USE_ROCMBLAS)
     return 1;
 #else
     return 0;
