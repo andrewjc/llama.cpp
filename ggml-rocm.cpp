@@ -1,13 +1,13 @@
-#include <hipblas/hipblas.h>
-#include <hip/hip_runtime.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <hip/hip_fp16.h>
 #include <atomic>
 #include "ggml-rocm.h"
 
+#define hipHalf __fp16
+
 typedef uint16_t ggml_fp16_t;
-static_assert(sizeof(__half) == sizeof(ggml_fp16_t), "wrong fp16 size");
+static_assert(sizeof(hipHalf) == sizeof(ggml_fp16_t), "wrong fp16 size");
 
 #define QK4_0 32
 typedef struct {
@@ -26,16 +26,16 @@ static_assert(sizeof(block_q4_1) == sizeof(float) * 2 + QK4_1 / 2, "wrong q4_1 b
 
 #define QK4_2 16
 typedef struct {
-    __half  d;              // delta
-    uint8_t qs[QK4_2 / 2];  // nibbles / quants
+    hipHalf  d;              // delta
+    uint8_t qs[QK4_2 / 2];   // nibbles / quants
 } block_q4_2;
 static_assert(sizeof(block_q4_2) == sizeof(ggml_fp16_t) + QK4_2 / 2, "wrong q4_2 block size/padding");
 
 #define QK4_3 16
 typedef struct {
-    __half  d;              // delta
-    __half  m;              // min
-    uint8_t qs[QK4_3 / 2];  // nibbles / quants
+    hipHalf  d;              // delta
+    hipHalf  m;              // min
+    uint8_t qs[QK4_3 / 2];   // nibbles / quants
 } block_q4_3;
 static_assert(sizeof(block_q4_3) == 2 * sizeof(ggml_fp16_t) + QK4_3 / 2, "wrong q4_3 block size/padding");
 
@@ -46,7 +46,7 @@ typedef struct {
 } block_q8_0;
 static_assert(sizeof(block_q8_0) == sizeof(float) + QK8_0, "wrong q8_0 block size/padding");
 
-__global__ void dequantize_block_q4_0(const void * vx, float * y) {
+static __global__ void dequantize_block_q4_0(const void * vx, float * y) {
     const block_q4_0 * x = (const block_q4_0 *) vx;
 
     const int i = hipBlockIdx_x;
@@ -69,7 +69,7 @@ __global__ void dequantize_block_q4_0(const void * vx, float * y) {
     }
 }
 
-__global__ void dequantize_block_q4_1(const void * vx, float * y) {
+static __global__ void dequantize_block_q4_1(const void * vx, float * y) {
     const block_q4_1 * x = (const block_q4_1 *) vx;
 
     const int i = hipBlockIdx_x;
@@ -93,7 +93,7 @@ __global__ void dequantize_block_q4_1(const void * vx, float * y) {
     }
 }
 
-__global__ void dequantize_block_q4_2(const void * vx, float * y) {
+static __global__ void dequantize_block_q4_2(const void * vx, float * y) {
     const block_q4_2 * x = (const block_q4_2 *) vx;
 
     const int i = hipBlockIdx_x;
@@ -116,7 +116,7 @@ __global__ void dequantize_block_q4_2(const void * vx, float * y) {
     }
 }
 
-__global__ void dequantize_block_q4_3(const void * vx, float * y) {
+static __global__ void dequantize_block_q4_3(const void * vx, float * y) {
     const block_q4_3 * x = (const block_q4_3 *) vx;
 
     const int i = hipBlockIdx_x;
@@ -140,7 +140,7 @@ __global__ void dequantize_block_q4_3(const void * vx, float * y) {
     }
 }
 
-__global__ void dequantize_block_q8_0(const void * vx, float * y) {
+static __global__ void dequantize_block_q8_0(const void * vx, float * y) {
     const block_q8_0 * x = (const block_q8_0 *) vx;
 
     const int i = hipBlockIdx_x;
@@ -156,38 +156,40 @@ __global__ void dequantize_block_q8_0(const void * vx, float * y) {
     }
 }
 
-void dequantize_row_q4_0_cuda(const void * vx, float * y, int k, hipStream_t stream) {
+void dequantize_row_q4_0_hip(const void * vx, float * y, int k, hipStream_t stream) {
     const int nb = k / QK4_0;
     hipLaunchKernelGGL(dequantize_block_q4_0, dim3(nb), dim3(1), 0, stream, vx, y);
 }
 
-void dequantize_row_q4_1_cuda(const void * vx, float * y, int k, hipStream_t stream) {
+void dequantize_row_q4_1_hip(const void * vx, float * y, int k, hipStream_t stream) {
     const int nb = k / QK4_1;
     hipLaunchKernelGGL(dequantize_block_q4_1, dim3(nb), dim3(1), 0, stream, vx, y);
 }
 
-void dequantize_row_q4_2_cuda(const void * vx, float * y, int k, hipStream_t stream) {
+void dequantize_row_q4_2_hip(const void * vx, float * y, int k, hipStream_t stream) {
     const int nb = k / QK4_2;
     hipLaunchKernelGGL(dequantize_block_q4_2, dim3(nb), dim3(1), 0, stream, vx, y);
 }
 
-void dequantize_row_q4_3_cuda(const void * vx, float * y, int k, hipStream_t stream) {
+void dequantize_row_q4_3_hip(const void * vx, float * y, int k, hipStream_t stream) {
     const int nb = k / QK4_3;
     hipLaunchKernelGGL(dequantize_block_q4_3, dim3(nb), dim3(1), 0, stream, vx, y);
 }
 
-void dequantize_row_q8_0_cuda(const void * vx, float * y, int k, hipStream_t stream) {
+void dequantize_row_q8_0_hip(const void * vx, float * y, int k, hipStream_t stream) {
     const int nb = k / QK8_0;
     hipLaunchKernelGGL(dequantize_block_q8_0, dim3(nb), dim3(1), 0, stream, vx, y);
 }
 
-// buffer pool for cuda
-#define MAX_CUDA_BUFFERS 16
+// buffer pool for HIP
+#define MAX_HIP_BUFFERS 16
 
 struct scoped_spin_lock {
     std::atomic_flag& lock;
-    while (lock.test_and_set(std::memory_order_acquire)) {
+    scoped_spin_lock(std::atomic_flag& lock) : lock(lock) {
+        while (lock.test_and_set(std::memory_order_acquire)) {
             ; // spin
+        }
     }
     ~scoped_spin_lock() {
         lock.clear(std::memory_order_release);
@@ -196,19 +198,19 @@ struct scoped_spin_lock {
     scoped_spin_lock& operator=(const scoped_spin_lock&) = delete;
 };
 
-struct cuda_buffer {
+struct hip_buffer {
     void * ptr = nullptr;
     size_t size = 0;
 };
 
-static cuda_buffer g_cuda_buffer_pool[MAX_CUDA_BUFFERS];
-static std::atomic_flag g_cuda_pool_lock = ATOMIC_FLAG_INIT;
+static hip_buffer g_hip_buffer_pool[MAX_HIP_BUFFERS];
+static std::atomic_flag g_hip_pool_lock = ATOMIC_FLAG_INIT;
 
-void * ggml_cuda_pool_malloc(size_t size, size_t * actual_size) {
-    scoped_spin_lock lock(g_cuda_pool_lock);
+void * ggml_hip_pool_malloc(size_t size, size_t * actual_size) {
+    scoped_spin_lock lock(g_hip_pool_lock);
 
-    for (int i = 0; i < MAX_CUDA_BUFFERS; ++i) {
-        cuda_buffer& b = g_cuda_buffer_pool[i];
+    for (int i = 0; i < MAX_HIP_BUFFERS; ++i) {
+        hip_buffer& b = g_hip_buffer_pool[i];
         if (b.size >= size && b.ptr != nullptr) {
             void * ptr = b.ptr;
             *actual_size = b.size;
@@ -218,39 +220,40 @@ void * ggml_cuda_pool_malloc(size_t size, size_t * actual_size) {
         }
     }
     void * ptr;
-    CUDA_CHECK(hipMalloc((void **) &ptr, size));
+    HIP_CHECK(hipMalloc((void **) &ptr, size));
     *actual_size = size;
     return ptr;
 }
 
-void ggml_cuda_pool_free(void * ptr, size_t size) {
-    scoped_spin_lock lock(g_cuda_pool_lock);
+void ggml_hip_pool_free(void * ptr, size_t size) {
+    scoped_spin_lock lock(g_hip_pool_lock);
 
-    for (int i = 0; i < MAX_CUDA_BUFFERS; ++i) {
-        cuda_buffer& b = g_cuda_buffer_pool[i];
+    for (int i = 0; i < MAX_HIP_BUFFERS; ++i) {
+        hip_buffer& b = g_hip_buffer_pool[i];
         if (b.ptr == nullptr) {
             b.ptr = ptr;
             b.size = size;
             return;
         }
     }
-    fprintf(stderr, "WARNING: cuda buffer pool full, increase MAX_CUDA_BUFFERS\n");
-    CUDA_CHECK(hipFree(ptr));
+    fprintf(stderr, "WARNING: hip buffer pool full, increase MAX_HIP_BUFFERS\n");
+    HIP_CHECK(hipFree(ptr));
 }
 
-hipblasHandle_t g_cublasH = NULL;
-hipStream_t g_cudaStream = NULL;
+hipblasHandle_t g_hipblasH = NULL;
+hipStream_t g_hipStream = NULL;
 
-void ggml_init_cublas(void) {
-    if (g_cublasH == NULL) {
-        // create cublas handle, bind a stream
-        CUBLAS_CHECK(hipblasCreate(&g_cublasH));
+void ggml_init_hipblas(void) {
+    if (g_hipblasH == NULL) {
+        // create hipblas handle, bind a stream
+        HIPBLAS_CHECK(hipblasCreate(&g_hipblasH));
 
-        CUDA_CHECK(hipStreamCreateWithFlags(&g_cudaStream, hipStreamNonBlocking));
+        HIP_CHECK(hipStreamCreateWithFlags(&g_hipStream, hipStreamNonBlocking));
 
-        CUBLAS_CHECK(hipblasSetStream(g_cublasH, g_cudaStream));
+        HIPBLAS_CHECK(hipblasSetStream(g_hipblasH, g_hipStream));
 
         // configure logging to stdout
-        // CUBLAS_CHECK(cublasLoggerConfigure(1, 1, 0, NULL));
+        // HIPBLAS_CHECK(hipblasLoggerConfigure(1, 1, 0, NULL));
     }
 }
+
